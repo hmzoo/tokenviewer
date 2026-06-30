@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Token Viewer 🪙</title>
+<style>
+  /* ─── Reset & base ──────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --bg2: #1a1d27; --bg3: #252836;
+    --fg: #e4e6ef; --fg2: #9ca0b0;
+    --accent: #6c5ce7; --accent2: #a29bfe;
+    --green: #00b894; --orange: #fdcb6e; --red: #e17055;
+    --radius: 10px; --shadow: 0 2px 12px rgba(0,0,0,.3);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  body {
+    background: var(--bg); color: var(--fg);
+    min-height: 100vh; display: flex; justify-content: center;
+    padding: 24px;
+  }
+  .container { max-width: 1100px; width: 100%; }
+
+  /* ─── Header ────────────────────────────────────────────────── */
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 12px; }
+  header h1 { font-size: 1.6rem; font-weight: 700; background: linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  header .sub { color: var(--fg2); font-size: .9rem; }
+
+  /* ─── Controls row ──────────────────────────────────────────── */
+  .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+  .controls label { font-size: .85rem; font-weight: 500; color: var(--fg2); display: flex; align-items: center; gap: 8px; }
+  select, textarea, input {
+    background: var(--bg2); color: var(--fg); border: 1px solid var(--bg3);
+    border-radius: var(--radius); padding: 8px 14px; font-size: .9rem;
+    transition: border-color .2s;
+  }
+  select:focus, textarea:focus, input:focus { outline: none; border-color: var(--accent); }
+  select { cursor: pointer; min-width: 180px; }
+
+  /* ─── Main grid ─────────────────────────────────────────────── */
+  .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 800px) { .main-grid { grid-template-columns: 1fr; } }
+
+  /* ─── Panels ────────────────────────────────────────────────── */
+  .panel {
+    background: var(--bg2); border: 1px solid var(--bg3); border-radius: var(--radius);
+    padding: 18px; box-shadow: var(--shadow);
+  }
+  .panel h2 {
+    font-size: .85rem; font-weight: 600; color: var(--fg2); text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .panel textarea {
+    width: 100%; min-height: 80px; resize: vertical;
+    background: var(--bg); font-size: .95rem; line-height: 1.6;
+  }
+
+  /* ─── Token chips ───────────────────────────────────────────── */
+  .token-row {
+    display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; align-items: center;
+    min-height: 48px;
+  }
+  .token-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--bg3); border: 1px solid transparent;
+    border-radius: 8px; padding: 4px 10px; cursor: pointer;
+    transition: all .15s; position: relative;
+    font-size: .85rem; line-height: 1.5;
+  }
+  .token-chip:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .token-chip .tok-text { font-weight: 500; }
+  .token-chip .tok-id {
+    font-size: .7rem; color: var(--fg2); background: rgba(0,0,0,.3);
+    border-radius: 4px; padding: 1px 5px; font-family: 'JetBrains Mono', monospace;
+  }
+  .token-chip .tok-special { color: var(--orange); }
+  .token-chip.editing {
+    border-color: var(--accent); background: var(--bg);
+    transform: translateY(-1px); box-shadow: 0 0 0 2px var(--accent2);
+  }
+  .token-chip input {
+    width: 70px; padding: 2px 6px; font-size: .8rem;
+    background: var(--bg); border: none; font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ─── RLE compressed ────────────────────────────────────────── */
+  .rle-item {
+    display: flex; align-items: center; gap: 8px; padding: 4px 0;
+    font-size: .85rem; flex-wrap: wrap;
+  }
+  .rle-item .rle-badge {
+    background: var(--bg3); border-radius: 6px; padding: 3px 10px; font-weight: 500;
+  }
+  .rle-item .rle-count {
+    color: var(--green); font-size: .8rem; font-weight: 600;
+  }
+  .rle-item .rle-arrow { color: var(--fg2); font-size: .8rem; }
+  .rle-item .rle-ids {
+    font-family: 'JetBrains Mono', monospace; font-size: .75rem;
+    color: var(--fg2); background: var(--bg); border-radius: 4px; padding: 1px 6px;
+  }
+
+  /* ─── Word mapping ──────────────────────────────────────────── */
+  .wm-group {
+    display: flex; align-items: baseline; gap: 6px; padding: 3px 0; flex-wrap: wrap;
+  }
+  .wm-label {
+    font-weight: 600; font-size: .85rem; color: var(--accent2); min-width: 50px;
+  }
+  .wm-tokens { display: flex; gap: 4px; flex-wrap: wrap; }
+
+  /* ─── Stats ─────────────────────────────────────────────────── */
+  .stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px;
+  }
+  .stat-card {
+    background: var(--bg); border-radius: 8px; padding: 12px; text-align: center;
+  }
+  .stat-card .stat-value {
+    font-size: 1.5rem; font-weight: 700; color: var(--accent2);
+  }
+  .stat-card .stat-label {
+    font-size: .75rem; color: var(--fg2); margin-top: 2px;
+  }
+
+  /* ─── Decoded output ────────────────────────────────────────── */
+  .decoded-box {
+    background: var(--bg); border-radius: 8px; padding: 12px 16px;
+    font-size: 1.05rem; line-height: 1.7; min-height: 44px;
+    border: 1px solid var(--bg3); margin-top: 8px;
+  }
+  .decoded-box .placeholder { color: var(--fg2); font-style: italic; }
+
+  /* ─── Loading ───────────────────────────────────────────────── */
+  .loading {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid var(--bg3); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden { display: none !important; }
+
+  /* ─── Badge token count ─────────────────────────────────────── */
+  .token-count-badge {
+    font-size: .75rem; color: var(--fg2); margin-left: auto;
+  }
+
+  /* ─── Empty state ───────────────────────────────────────────── */
+  .empty-state { color: var(--fg2); font-style: italic; font-size: .85rem; padding: 12px 0; }
+
+  /* ─── Scrollbar ─────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div>
+      <h1>🪙 Token Viewer</h1>
+      <div class="sub">Visualisation interactive de tokenisation</div>
+    </div>
+  </header>
+
+  <!-- Controls -->
+  <div class="controls">
+    <label>
+      🧠 Modèle
+      <select id="modelSelect"></select>
+    </label>
+    <span id="tokenCountBadge" class="token-count-badge"></span>
+  </div>
+
+  <!-- Main grid -->
+  <div class="main-grid">
+
+    <!-- Input & Tokens -->
+    <div class="panel">
+      <h2>📝 Texte d'entrée</h2>
+      <textarea id="textInput" placeholder="Tapez une phrase ici…" autofocus></textarea>
+    </div>
+
+    <div class="panel">
+      <h2>🔢 Tokens <span id="tokensHeaderInfo" style="font-weight:400;text-transform:none;font-size:.8rem;"></span></h2>
+      <div id="tokenContainer" class="token-row">
+        <div class="empty-state">En attente de saisie…</div>
+      </div>
+    </div>
+
+    <!-- Decoded (reverse) -->
+    <div class="panel">
+      <h2>🔄 Décodage inverse <span style="font-weight:400;text-transform:none;font-size:.75rem;color:var(--fg2)">(modifiez un ID ci-dessus → texte mis à jour)</span></h2>
+      <div id="decodedContainer" class="decoded-box">
+        <span class="placeholder">Cliquez sur un token pour modifier son ID</span>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="panel">
+      <h2>📊 Statistiques</h2>
+      <div id="statsContainer" class="stats-grid">
+        <div class="stat-card"><div class="stat-value" id="statTotal">—</div><div class="stat-label">Total tokens</div></div>
+        <div class="stat-card"><div class="stat-value" id="statUnique">—</div><div class="stat-label">IDs uniques</div></div>
+        <div class="stat-card"><div class="stat-value" id="statRle">—</div><div class="stat-label">Taille RLE</div></div>
+        <div class="stat-card"><div class="stat-value" id="statRatio">—</div><div class="stat-label">Compression</div></div>
+      </div>
+    </div>
+
+    <!-- Compressed RLE -->
+    <div class="panel">
+      <h2>📦 Version compressée (RLE)</h2>
+      <div id="rleContainer"><div class="empty-state">—</div></div>
+    </div>
+
+    <!-- Word mapping -->
+    <div class="panel">
+      <h2>🔗 Correspondance mot → tokens</h2>
+      <div id="wmContainer"><div class="empty-state">—</div></div>
+    </div>
+
+    <!-- LLMLingua compression -->
+    <div class="panel" style="grid-column: 1 / -1;">
+      <h2>🧩 Compression LLMLingua <span style="font-weight:400;text-transform:none;font-size:.75rem;color:var(--fg2)">(vrai compresseur de prompts par IA)</span></h2>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+        <label style="font-size:.85rem;color:var(--fg2);display:flex;align-items:center;gap:8px;">
+          Taux de compression
+          <input type="range" id="compressRate" min="0.1" max="0.9" step="0.05" value="0.5"
+            style="width:160px;cursor:pointer;">
+          <span id="compressRateLabel" style="font-weight:600;color:var(--accent2);min-width:40px;">0.50</span>
+        </label>
+        <button id="compressBtn" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 20px;cursor:pointer;font-weight:600;">🧬 Compresser</button>
+        <span id="compressStatus" style="font-size:.8rem;color:var(--fg2);"></span>
+      </div>
+      <div class="decoded-box" id="compressResult">
+        <span class="placeholder">Cliquez sur « Compresser » pour voir le résultat</span>
+      </div>
+      <div id="compressStats" style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────
+const state = {
+  model: 'GPT-2',
+  currentIds: [],
+  currentTokens: [],
+  editingIndex: -1,
+  originalText: '',
+};
+
+let debounceTimer = null;
+
+// ─── DOM refs ───────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const modelSelect  = $('modelSelect');
+const textInput    = $('textInput');
+const tokenCont    = $('tokenContainer');
+const decodedCont  = $('decodedContainer');
+const rleCont      = $('rleContainer');
+const wmCont       = $('wmContainer');
+const statTotal    = $('statTotal');
+const statUnique   = $('statUnique');
+const statRle      = $('statRle');
+const statRatio    = $('statRatio');
+const tokHeader    = $('tokensHeaderInfo');
+const tokBadge     = $('tokenCountBadge');
+
+// ─── Load models ────────────────────────────────────────────────────────
+async function loadModels() {
+  const res = await fetch('/api/models');
+  const data = await res.json();
+  const names = Object.keys(data.models);
+  modelSelect.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
+  state.model = names[0];
+}
+
+// ─── Tokenize ───────────────────────────────────────────────────────────
+async function tokenize(text) {
+  state.originalText = text;
+  if (!text.trim()) {
+    state.currentIds = [];
+    state.currentTokens = [];
+    renderAll(null, null);
+    return;
+  }
+  const res = await fetch('/api/tokenize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: state.model, text }),
+  });
+  if (!res.ok) return;
+  const data = await res.json();
+  state.currentIds = data.ids;
+  state.currentTokens = data.tokens;
+  renderAll(data, text);
+}
+
+// ─── Decode ─────────────────────────────────────────────────────────────
+async function decode(ids) {
+  if (!ids.length) { renderDecoded(''); return; }
+  const res = await fetch('/api/decode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: state.model, ids }),
+  });
+  if (!res.ok) { renderDecoded('⚠️ Erreur de décodage'); return; }
+  const data = await res.json();
+  renderDecoded(data.text);
+}
+
+// ─── Render all ─────────────────────────────────────────────────────────
+function renderAll(data, originalText) {
+  if (!data || !data.ids || data.ids.length === 0) {
+    tokenCont.innerHTML = '<div class="empty-state">En attente de saisie…</div>';
+    renderStats(null);
+    renderRle(null);
+    renderWm(null);
+    renderDecoded('');
+    tokHeader.textContent = '';
+    tokBadge.textContent = '';
+    return;
+  }
+  tokenCont.innerHTML = renderTokenHTML(data.ids, data.tokens, state.editingIndex);
+  renderStats(data.stats);
+  renderRle(data.compressed);
+  renderWm(data.word_mapping);
+  renderDecoded(originalText || '');
+  tokHeader.textContent = `(${data.tokens.length} tokens)`;
+  tokBadge.textContent = `${data.tokens.length} tokens · ${data.stats.unique_ids} uniques`;
+}
+
+// ─── Render tokens ──────────────────────────────────────────────────────
+function renderTokens(data) {
+  if (!data || !data.ids || data.ids.length === 0) {
+    tokenCont.innerHTML = '<div class="empty-state">En attente de saisie…</div>';
+    return;
+  }
+  const specialTokens = new Set(['[CLS]', '[SEP]', '[PAD]', '[MASK]', '[UNK]']);
+  tokenCont.innerHTML = data.ids.map((id, i) => {
+    const tok = data.tokens[i];
+    const isSpecial = specialTokens.has(tok);
+    const textClass = isSpecial ? 'tok-text tok-special' : 'tok-text';
+    const isEditing = state.editingIndex === i;
+    if (isEditing) {
+      return `<div class="token-chip editing" data-index="${i}">
+        <span class="${textClass}">${escHtml(tok)}</span>
+        <input type="number" value="${id}" id="editInput_${i}"></div>`;
+    }
+    return `<div class="token-chip" data-index="${i}">
+      <span class="${textClass}">${escHtml(tok)}</span>
+      <span class="tok-id">${id}</span>
+    </div>`;
+  }).join('');
+}
+
+// ─── Render stats ───────────────────────────────────────────────────────
+function renderStats(s) {
+  if (!s) {
+    statTotal.textContent = statUnique.textContent = statRle.textContent = statRatio.textContent = '—';
+    return;
+  }
+  statTotal.textContent = s.total_tokens;
+  statUnique.textContent = s.unique_ids;
+  statRle.textContent = s.compressed_size;
+  statRatio.textContent = `${s.compression_ratio}×`;
+}
+
+// ─── Render RLE ─────────────────────────────────────────────────────────
+function renderRle(items) {
+  if (!items || items.length === 0) {
+    rleCont.innerHTML = '<div class="empty-state">—</div>';
+    return;
+  }
+  rleCont.innerHTML = items.map(item =>
+    `<div class="rle-item">
+      <span class="rle-badge">« ${escHtml(item.token)} »</span>
+      ${item.count > 1 ? `<span class="rle-count">×${item.count}</span>` : ''}
+      <span class="rle-arrow">→</span>
+      <span class="rle-ids">[${item.ids.join(', ')}]</span>
+    </div>`
+  ).join('');
+}
+
+// ─── Render word mapping ────────────────────────────────────────────────
+function renderWm(groups) {
+  if (!groups || groups.length === 0) {
+    wmCont.innerHTML = '<div class="empty-state">—</div>';
+    return;
+  }
+  wmCont.innerHTML = groups.map(g =>
+    `<div class="wm-group">
+      <span class="wm-label">${escHtml(g.label)}</span>
+      <span class="wm-tokens">${g.tokens.map(t =>
+        `<span class="token-chip" style="cursor:default;padding:2px 7px;font-size:.8rem">
+          «${escHtml(t.text)}»<span class="tok-id">${t.id}</span>
+        </span>`
+      ).join(' ')}</span>
+    </div>`
+  ).join('');
+}
+
+// ─── Render decoded ─────────────────────────────────────────────────────
+function renderDecoded(text) {
+  if (!text) {
+    decodedCont.innerHTML = '<span class="placeholder">Cliquez sur un token pour modifier son ID</span>';
+    return;
+  }
+  decodedCont.textContent = text;
+}
+
+// ─── Token editing ──────────────────────────────────────────────────────
+let _editStarted = false; // flag pour éviter le conflit pointerdown global
+
+// Démarrer l'édition au pointerdown (réactif) mais valider au click (après re-render)
+tokenCont.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.token-chip.editing input')) return;
+  const chip = e.target.closest('.token-chip:not(.editing)');
+  if (!chip) return;
+  const idx = parseInt(chip.dataset.index, 10);
+  if (isNaN(idx)) return;
+  startEdit(idx);
+  _editStarted = true;
+  setTimeout(() => { _editStarted = false; }, 200);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (state.editingIndex === -1) return;
+  if (e.key === 'Enter') { e.preventDefault(); commitEdit(state.editingIndex); }
+  else if (e.key === 'Escape') { cancelEdit(); }
+});
+
+// Valider l'édition si on clique ailleurs — MAIS pas si on vient juste de démarrer l'édition
+document.addEventListener('pointerdown', (e) => {
+  if (state.editingIndex === -1 || _editStarted) return;
+  const input = document.getElementById(`editInput_${state.editingIndex}`);
+  if (input && !input.contains(e.target)) commitEdit(state.editingIndex);
+});
+
+function startEdit(idx) {
+  state.editingIndex = idx;
+  tokenCont.innerHTML = renderTokenHTML(state.currentIds, state.currentTokens, idx);
+  // Focus et sélection immédiats
+  requestAnimationFrame(() => {
+    const inp = document.getElementById(`editInput_${idx}`);
+    if (inp) { inp.focus(); inp.select(); }
+  });
+}
+
+function commitEdit(idx) {
+  const inp = document.getElementById(`editInput_${idx}`);
+  if (!inp) return;
+  const raw = inp.value.trim();
+  if (raw === '') { cancelEdit(); return; }
+  const val = parseInt(raw, 10);
+  if (isNaN(val)) {
+    // Si ce n'est pas un nombre, on annule
+    cancelEdit();
+    return;
+  }
+  if (val === state.currentIds[idx]) { cancelEdit(); return; }
+  state.currentIds[idx] = val;
+  state.editingIndex = -1;
+  tokenCont.innerHTML = renderTokenHTML(state.currentIds, state.currentTokens, -1);
+  updateLocalStats();
+  updateLocalRle();
+  decode(state.currentIds);
+}
+
+function cancelEdit() {
+  state.editingIndex = -1;
+  tokenCont.innerHTML = renderTokenHTML(state.currentIds, state.currentTokens, -1);
+}
+
+function renderTokenHTML(ids, tokens, editingIdx) {
+  if (!ids || !ids.length) return '<div class="empty-state">En attente de saisie…</div>';
+  const special = new Set(['[CLS]','[SEP]','[PAD]','[MASK]','[UNK]']);
+  return ids.map((id, i) => {
+    const tok = tokens[i];
+    const sc = special.has(tok) ? 'tok-text tok-special' : 'tok-text';
+    if (i === editingIdx) {
+      return `<div class="token-chip editing" data-index="${i}"><span class="${sc}">${escHtml(tok)}</span><input type="text" inputmode="numeric" value="${id}" id="editInput_${i}"></div>`;
+    }
+    return `<div class="token-chip" data-index="${i}"><span class="${sc}">${escHtml(tok)}</span><span class="tok-id">${id}</span></div>`;
+  }).join('');
+}
+
+// ─── Local updates (when IDs change client-side) ────────────────────────
+function updateLocalStats() {
+  const ids = state.currentIds;
+  if (!ids.length) { renderStats(null); return; }
+  const unique = new Set(ids).size;
+  let rleLen = ids.length > 0 ? 1 : 0;
+  for (let i = 1; i < ids.length; i++) {
+    if (ids[i] !== ids[i-1]) rleLen++;
+  }
+  renderStats({
+    total_tokens: ids.length,
+    unique_ids: unique,
+    compressed_size: rleLen,
+    compression_ratio: +(ids.length / Math.max(rleLen, 1)).toFixed(2),
+  });
+  tokHeader.textContent = `(${ids.length} tokens)`;
+  tokBadge.textContent = `${ids.length} tokens · ${unique} uniques`;
+}
+
+function updateLocalRle() {
+  const ids = state.currentIds;
+  const toks = state.currentTokens;
+  if (!ids.length) { renderRle([]); return; }
+  const items = [];
+  let prevTok = toks[0], cnt = 1, idList = [ids[0]];
+  for (let i = 1; i < toks.length; i++) {
+    if (toks[i] === prevTok) { cnt++; idList.push(ids[i]); }
+    else {
+      items.push({ token: prevTok, count: cnt, ids: [...idList] });
+      prevTok = toks[i]; cnt = 1; idList = [ids[i]];
+    }
+  }
+  items.push({ token: prevTok, count: cnt, ids: idList });
+  renderRle(items);
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ─── LLMLingua Compression ──────────────────────────────────────────────
+const compressBtn = $('compressBtn');
+const compressRate = $('compressRate');
+const compressRateLabel = $('compressRateLabel');
+const compressResult = $('compressResult');
+const compressStatus = $('compressStatus');
+const compressStats = $('compressStats');
+
+compressRate.addEventListener('input', () => {
+  compressRateLabel.textContent = parseFloat(compressRate.value).toFixed(2);
+});
+
+compressBtn.addEventListener('click', async () => {
+  const text = textInput.value.trim();
+  if (!text) { compressStatus.textContent = '⚠️ Entrez d\'abord une phrase.'; return; }
+  compressBtn.disabled = true;
+  compressStatus.textContent = '⏳ Compression en cours...';
+  compressResult.textContent = '';
+  compressStats.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/compress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, rate: parseFloat(compressRate.value) }),
+    });
+    if (!res.ok) { throw new Error(await res.text()); }
+    const data = await res.json();
+    compressResult.textContent = data.compressed_text;
+    compressStatus.textContent = '✅ Terminé';
+    compressStats.innerHTML = `
+      <span class="stat-card" style="padding:8px 14px;">
+        <span class="stat-value" style="font-size:1.1rem">${data.original_tokens}</span>
+        <span class="stat-label">mots originaux</span>
+      </span>
+      <span class="stat-card" style="padding:8px 14px;">
+        <span class="stat-value" style="font-size:1.1rem">${data.compressed_tokens}</span>
+        <span class="stat-label">mots compressés</span>
+      </span>
+      <span class="stat-card" style="padding:8px 14px;">
+        <span class="stat-value" style="font-size:1.1rem">${(data.compression_ratio * 100).toFixed(0)}%</span>
+        <span class="stat-label">taille restante</span>
+      </span>
+      <span class="stat-card" style="padding:8px 14px;">
+        <span class="stat-value" style="font-size:1.1rem;color:var(--green)">${((1 - data.compression_ratio) * 100).toFixed(0)}%</span>
+        <span class="stat-label">compressé</span>
+      </span>
+    `;
+  } catch (err) {
+    compressStatus.textContent = `❌ Erreur: ${err.message}`;
+  } finally {
+    compressBtn.disabled = false;
+  }
+});
+
+// ─── Events ─────────────────────────────────────────────────────────────
+textInput.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => tokenize(textInput.value), 150);
+});
+
+modelSelect.addEventListener('change', () => {
+  state.model = modelSelect.value;
+  if (textInput.value.trim()) tokenize(textInput.value);
+  else {
+    state.currentIds = []; state.currentTokens = [];
+    renderAll(null);
+  }
+});
+
+// ─── Init ───────────────────────────────────────────────────────────────
+loadModels().then(() => {
+  textInput.value = "Le soleil brille aujourd'hui dans le ciel bleu.";
+  tokenize(textInput.value);
+});
+</script>
+</body>
+</html>
